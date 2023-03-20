@@ -1,0 +1,78 @@
+PROCESS:
+
+prep:
+	* DONE pull the official scores from the official Lichess api using https:/lichess.org/api/tournament//DRlipBnK (the id for the Lil Muscles Arena)
+	* DONE save the scores locally 
+	* DONE confirm that we're able to load the scores back into memory and parse them into an object we can work Willithepig
+		note that the score strings are in reverse chronological order - the OPPOSITE of the order in the Lichess web interface.
+		but this is actually helpful, because the tournament results file is ALSO in reverse chronological order.
+		this means we don't need to sort the scores into the order that they appear in in the Lichess web interface.
+	* DONE grab the full results pgn, which containts the timestamps, from the tournament page
+	* DONE convert the full result pgn to json for easier and more error-proof parsing/processing;
+		used the following library: https://github.com/mliebelt/pgn-parser library
+		^ actually, that library's CLI tool didn't work off the bat, so I ended up using another tool:
+		https://github.com/Allirey/PGN-utils, the pgn_to_json_light.py script
+	*  
+
+
+
+
+phase 1: DATA PARSING / COLLECTION
+
+* init
+	* whitePlayer, blackPlayer to empty strings
+	* whiteResult, blackResult to 0
+	* timestamp: 0
+	* players to an empty map
+* Read the .pgn document in line by line
+* When you reach "[White", grab the in-parentheses username that follows and set whitePlayer to it
+* When you reach "[Black", grab the in-parentheses username that follows and set blackPlayer to it
+* When you reach "[Result", parse the in-parentheses string that follows and set whiteResult and blackResult accordingly
+* When you reach "[UTCTime", parse the in-parentheses HH:MM::ss string that follows, converting it to a single number that represents the time as the number of seconds since the start of that day
+(HH*3600 + MM*60 + ss). set timestamp to this value
+* if whitePlayer and/or blackPlayer are not yet keys in the map, init them as keys in the map. the init value should be:
+	{
+		totalPoints: 0, // again, to help us check against the Lichess table
+		hourlyPoints: {
+			hour1: 0,
+			hour2: 0,
+			hour3: 0,
+			hour4: 0,
+		},
+		games: [] 	// this will be an array of objects; each object will have the following shape:
+				// (the length of this array should match the Lichess count for that player's number of games!)
+				{
+					timestamp: [the timestamp value for that game based on the results of the time parsing code described above],
+					result: 0,
+					lichessArenaPointvalue: 0 // this will be computed based on the Lichess arena rules after the games are sorted by timestamp
+				}
+	}
+* for both whitePlayer and blackPlayer, push a new game object to their games array.
+	timestamp should be what was computed
+	result should be whiteResult / blackResult
+	lichessArenaPointValue should be set to 0; this will be computed later based on the arena rules
+* Keep going until you get to the end of the doc
+
+phase 2: FIRST VERIFICATION STEP
+check that the total number of players matches the Lichess results
+check that the total number of games played for each player matches the Lichess results
+
+phase 3: SORTING
+for each player, sort the objects in their games array by the timestamp prop, in asc order
+
+phase 4: COMPUTE LICHESS ARENA POINT VALUES FOR ALL GAMES
+using the Lichess arena scoring logic, compute the point values for each game of each player, and set that game's object's lichessArenaPointValue prop to that value
+NOTE: may need game length as well to compute, because of Lichess arena draw rules!
+
+phase 5: SECOND VERIFICATION STEP
+check that the point values we have computed for the games match what Lichess shows in the tournament lobby
+
+phase 6: BUCKET THE POINTS INTO hourlyPoints
+for each player, go through their games array and add the lichessArenaPointValue of that game that we have computed in step 4 to the appropriate hourly point total
+in hourlyPoints, based on the timestamp of that game
+
+phase 7: THIRD VERIFICATION STEP
+verify that the hourly point totals add up to the players' Lichess grand totals
+
+phase 8: TABULATE RESULTS!
+for each hour, go through the list of players and populate a results table for that hour using that hour's point totals for each player.
